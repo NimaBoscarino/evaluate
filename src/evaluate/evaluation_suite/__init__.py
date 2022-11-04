@@ -3,6 +3,7 @@ import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Optional, Union
+from abc import ABC, abstractmethod
 
 from datasets import Dataset, DownloadMode, load_dataset
 from datasets.utils.version import Version
@@ -16,13 +17,20 @@ from ..utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+class Preprocessor(ABC):
+    @abstractmethod
+    def run(self, dataset: Dataset) -> Dataset:
+        pass
+
+
 @dataclass
 class SubTask:
     task_type: str
+    name: Optional[str] = None
     data: Optional[Union[str, Dataset]] = None
     subset: Optional[str] = None
     split: Optional[str] = None
-    data_preprocessor: Optional[Callable] = None
+    data_preprocessor: Optional[Union[Callable, Preprocessor]] = None
     args_for_task: Optional[dict] = None
 
 
@@ -85,11 +93,14 @@ class EvaluationSuite:
         results_all = {}
         for task in self.suite:
 
-            task_name = task.data
+            task_name = task.name or task.data
 
             if task.data_preprocessor:  # task requires extra preprocessing
                 ds = load_dataset(task.data, name=task.subset, split=task.split)
-                task.data = ds.map(task.data_preprocessor)
+                if issubclass(type(task.data_preprocessor), Preprocessor):
+                    task.data = task.data_preprocessor.run(ds)
+                else:
+                    task.data = ds.map(task.data_preprocessor)
 
             task_evaluator = evaluator(task.task_type)
             args_for_task = task.args_for_task
