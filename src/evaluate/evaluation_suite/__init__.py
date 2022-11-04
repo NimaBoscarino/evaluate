@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from datasets import Dataset, DownloadMode, load_dataset
 from datasets.utils.version import Version
 
-from ..evaluator import evaluator
+from ..evaluator import evaluator, Evaluator
 from ..loading import evaluation_module_factory
 from ..utils.file_utils import DownloadConfig
 from ..utils.logging import get_logger
@@ -27,6 +27,7 @@ class Preprocessor(ABC):
 class SubTask:
     task_type: str
     name: Optional[str] = None
+    evaluator: Optional[Evaluator] = None
     data: Optional[Union[str, Dataset]] = None
     subset: Optional[str] = None
     split: Optional[str] = None
@@ -102,7 +103,8 @@ class EvaluationSuite:
                 else:
                     task.data = ds.map(task.data_preprocessor)
 
-            task_evaluator = evaluator(task.task_type)
+            task_evaluator = task.evaluator or evaluator(task.task_type)
+
             args_for_task = task.args_for_task
             args_for_task["model_or_pipeline"] = model_or_pipeline
             args_for_task["data"] = task.data

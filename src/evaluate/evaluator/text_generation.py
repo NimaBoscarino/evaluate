@@ -80,6 +80,7 @@ class TextGenerationEvaluator(Evaluator):
         subset: Optional[str] = None,
         split: Optional[str] = None,
         metric: Union[str, EvaluationModule] = None,
+        metric_init_kwargs: Optional[Dict] = None,
         tokenizer: Optional[Union[str, "PreTrainedTokenizer"]] = None,  # noqa: F821
         strategy: Literal["simple", "bootstrap"] = "simple",
         confidence_level: float = 0.95,
@@ -114,6 +115,7 @@ class TextGenerationEvaluator(Evaluator):
             subset=subset,
             split=split,
             metric=metric,
+            metric_init_kwargs=metric_init_kwargs,
             tokenizer=tokenizer,
             strategy=strategy,
             confidence_level=confidence_level,
