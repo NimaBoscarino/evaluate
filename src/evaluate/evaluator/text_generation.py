@@ -42,7 +42,9 @@ class TextGenerationEvaluator(Evaluator):
     """
 
     PREDICTION_PREFIX = "generated"
-    PIPELINE_KWARGS = {}
+    PIPELINE_KWARGS = {
+        "batch_size": 32,
+    }
 
     def __init__(self, task="text-generation", default_metric_name=None):
         super().__init__(task, default_metric_name=default_metric_name)

@@ -21,6 +21,7 @@ from datasets import Dataset, load_dataset
 
 from evaluate.evaluator.utils import choose_split
 
+from tqdm.auto import tqdm
 
 try:
     from scipy.stats import bootstrap
@@ -450,7 +451,15 @@ class Evaluator(ABC):
 
     def call_pipeline(self, pipe, *args, **kwargs):
         start_time = perf_counter()
-        pipe_output = pipe(*args, **kwargs, **self.PIPELINE_KWARGS)
+
+        data = args[0]
+        pipe_output = []
+
+        with tqdm(total=len(data) / self.PIPELINE_KWARGS["batch_size"]) as progress_bar:
+            for item in data:
+                pipe_output.append(pipe(item, **kwargs, **self.PIPELINE_KWARGS))
+                progress_bar.update(1)
+
         end_time = perf_counter()
         return pipe_output, self._compute_time_perf(start_time, end_time, len(pipe_output))
 

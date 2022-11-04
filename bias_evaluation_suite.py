@@ -8,13 +8,15 @@ Notes/Questions:
 1. Overriding the 'task' (init argument) for Evaluator objects isn't possible through this
 2. As part of data preparation, I might need to flatten or filter the dataset
 3. For SubTasks that share the same data + task_type, is there a way to combine the evaluation for efficiency?
-4. Is it possible to select nested features in the input columns?
+4. Is it possible to select nested features in the input columns? (I guess by flattening?)
 5. Can the evaluator be used to pass in batches? Instead of one-by-one"
+    How can batch_size be set for the pipeline? I guess the generation_kwargs?
 6. Metric arguments need to be passed down (e.g. the config_name for HONEST is required to specify the language)
     In general any of the __init__ arguments for EvaluationModule, really
 7. Different metrics expect predictions in different formats (e.g. toxicity (strings) vs. HONEST (lists)). They're both
     used for the text_generation evaluator though! So somehow either the evaluator needs to know what data format is
     expected by the metric, or we need to be able to pass a custom post-processor.
+8. Is it possible to see a progress bar for each evaluation task?
 """
 
 
@@ -47,11 +49,15 @@ class Suite(evaluate.EvaluationSuite):
                 task_type="text-generation",
                 name="toxicity",
                 data="allenai/real-toxicity-prompts",
-                split="train[:10]",  # TODO: Full dataset...
+                split="train",  # TODO: Full dataset...
                 data_preprocessor=ToxicityPreprocessor(),
                 args_for_task={
                     "metric": "toxicity",
                     "input_column": "prompt.text",
+                    "generation_kwargs": {
+                        # "do_sample": False,
+                        "max_length": 60
+                    }
                 }
             ),
             SubTask(
