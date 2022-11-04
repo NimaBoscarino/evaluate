@@ -17,6 +17,10 @@ Notes/Questions:
     used for the text_generation evaluator though! So somehow either the evaluator needs to know what data format is
     expected by the metric, or we need to be able to pass a custom post-processor.
 8. Is it possible to see a progress bar for each evaluation task?
+9. Inputs get passed to the pipeline as DatasetColumn, which is not Dataset
+     is_dataset = Dataset is not None and isinstance(inputs, Dataset) --> false
+     this doesn't cause anything weird because it's caught by is_list below it, but still worth noting
+ 
 """
 
 
