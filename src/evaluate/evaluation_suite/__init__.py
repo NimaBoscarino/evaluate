@@ -85,6 +85,8 @@ class EvaluationSuite:
         results_all = {}
         for task in self.suite:
 
+            task_name = task.data
+
             if task.data_preprocessor:  # task requires extra preprocessing
                 ds = load_dataset(task.data, name=task.subset, split=task.split)
                 task.data = ds.map(task.data_preprocessor)
@@ -97,6 +99,6 @@ class EvaluationSuite:
             args_for_task["split"] = task.split
             results = task_evaluator.compute(**args_for_task)
 
-            task_id = task.data + "/" + task.subset if task.subset else task.data
+            task_id = task_name + "/" + task.subset if task.subset else task_name
             results_all[task_id] = results
         return results_all
