@@ -41,13 +41,12 @@ class TextGenerationEvaluator(Evaluator):
     Methods in this class assume a data format compatible with the [`TextGenerationPipeline`].
     """
 
-    PREDICTION_PREFIX = "generated"
-    PIPELINE_KWARGS = {
-        "batch_size": 32,
-    }
-
     def __init__(self, task="text-generation", default_metric_name=None):
         super().__init__(task, default_metric_name=default_metric_name)
+        self.PREDICTION_PREFIX = "generated"
+        self.PIPELINE_KWARGS = {
+            # "batch_size": 32,
+        }
 
     def predictions_processor(self, predictions, label_mapping):
         return {"predictions": [pred[0][f"{self.PREDICTION_PREFIX}_text"] for pred in predictions]}

@@ -1,17 +1,17 @@
 import evaluate
 from evaluate.evaluation_suite import SubTask, Preprocessor
 from evaluate import TextGenerationEvaluator
-from datasets import Dataset, concatenate_datasets
+from datasets import Dataset, DatasetDict, concatenate_datasets
 from typing import Tuple, Any, Dict
 import pandas as pd
 
 """
 Notes/Questions:
-1. Overriding the 'task' (init argument) for Evaluator objects isn't possible through this
+1. Overriding the 'task' (init argument) for Evaluator objects isn't possible through the current evaluation suite API
 2. As part of data preparation, I might need to flatten or filter the dataset
 3. For SubTasks that share the same data + task_type, is there a way to combine the evaluation for efficiency?
-4. Is it possible to select nested features in the input columns? (I guess by flattening?)
-5. Can the evaluator be used to pass in batches? Instead of one-by-one"
+4. Is it possible to select nested features for the input columns? (A: I guess by flattening?)
+5. Can the evaluator be used to pass in batches? Instead of one-by-one
     How can batch_size be set for the pipeline? I guess the generation_kwargs?
 6. Metric arguments need to be passed down (e.g. the config_name for HONEST is required to specify the language)
     In general any of the __init__ arguments for EvaluationModule, really
@@ -30,6 +30,11 @@ Notes/Questions:
       run. In order to do that, I have to override the predictions_processor, but it ALSO needs the original data so
       that I can do the disaggregation... HOLD UP! I can actually just do the aggregation AFTER the metric calculation,
       in my custom evaluator by overriding .compute()
+12. (BIG, possibly bug?) PIPELINE_KWARGS in the various evaluators is a class variable, which means that it's shared
+      among instances of the same evaluator type. This is problematic because e.g. in the evaluation suites it should
+      be possible to use the same evaluator type (e.g. text generation) for multiple tasks, which can require completely
+      different PIPELINE_KWARGS. In my case I ran into this with num_return_sequences. IMO I can't see any good reason
+      for class variables in the evaluators.
 """
 
 # https://colab.research.google.com/drive/1-HDJUcPMKEF-E7Hapih0OmA1xTW2hdAv#scrollTo=1Uk8NROQ3l-k
@@ -38,7 +43,7 @@ Notes/Questions:
 class ToxicityPreprocessor(Preprocessor):
     def run(self, dataset: Dataset) -> Dataset:
         dataset = dataset.flatten()
-        dataset = dataset.shuffle().select(range(100))  # TODO: Temporary, for replicating Colab results
+        dataset = dataset.shuffle()  # .select(range(100))  # TODO: Temporary, for replicating Colab results
         return dataset
 
 
@@ -49,25 +54,20 @@ class BoldPreprocessor(Preprocessor):
         Sample 50 American_actresses + 50 American_actors, and only select the first prompt for each
         """
         shuffled_dataset = dataset.shuffle()
-        female_bold = shuffled_dataset.filter(lambda x: x["category"] == "American_actresses").select(range(5))  # TODO: 50
-        male_bold = shuffled_dataset.filter(lambda x: x["category"] == "American_actors").select(range(5))  # TODO: 50
+        female_bold = shuffled_dataset.filter(lambda x: x["category"] == "American_actresses")  # .select(range(50))
+        male_bold = shuffled_dataset.filter(lambda x: x["category"] == "American_actors")  # .select(range(50))
         dataset = concatenate_datasets([female_bold, male_bold])
+
+        # Index needed for selecting the subgroups later
         dataset = dataset.map(lambda x, idx: {"prompt": x["prompts"][0], "index": idx}, with_indices=True)
 
         return dataset
 
 
-class HonestEvaluator(TextGenerationEvaluator):
-    def predictions_processor(self, predictions, label_mapping):
-        return {
-            "predictions": [pred[f"{self.PREDICTION_PREFIX}_text"].split(" ")[0] for pred in predictions[0]]
-        }
-
-
 class RegardEvaluator(TextGenerationEvaluator):
-    def __init__(self, disaggregate_by, label1, label2, *args, **kwargs):
+    def __init__(self, compare_by, label1, label2, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.disaggregate_by = disaggregate_by
+        self.compare_by = compare_by
         self.label1 = label1
         self.label2 = label2
 
@@ -76,13 +76,16 @@ class RegardEvaluator(TextGenerationEvaluator):
         return {"data": [pred[0][f"{self.PREDICTION_PREFIX}_text"] for pred in predictions]}
 
     def compute(self, *args, **kwargs) -> Tuple[Dict[str, float], Any]:
+        # NOTE: I implemented *basically* the same thing for HONEST (two computations), but in a slightly different way
+        #       Compare the two to see which one you prefer...
+
         result = super().compute(*args, **kwargs)
 
         result["regard"] = list(map(lambda r: {rs["label"]: rs["score"] for rs in r}, result["regard"]))
 
         data = kwargs["data"]
-        group1 = data.filter(lambda x: x[self.disaggregate_by] == self.label1)
-        group2 = data.filter(lambda x: x[self.disaggregate_by] == self.label2)
+        group1 = data.filter(lambda x: x[self.compare_by] == self.label1)
+        group2 = data.filter(lambda x: x[self.compare_by] == self.label2)
 
         results_df = pd.DataFrame(result["regard"])
         result["regard"] = {
@@ -90,6 +93,41 @@ class RegardEvaluator(TextGenerationEvaluator):
         }
 
         return result
+
+
+class HonestPreprocessor(Preprocessor):
+    def __init__(self, compare_by, label1, label2):
+        self.compare_by = compare_by
+        self.label1 = label1
+        self.label2 = label2
+
+    def run(self, dataset: Dataset) -> DatasetDict:
+        shuffled_dataset = dataset.shuffle()
+        group1 = shuffled_dataset.filter(lambda x: x[self.compare_by].startswith(self.label1))  # .select(range(50))
+        group2 = shuffled_dataset.filter(lambda x: x[self.compare_by].startswith(self.label2))  # .select(range(50))
+
+        # TODO: Might want to abstract out hard-coded values ("text", "template_masked")
+        dataset = DatasetDict({"group1": group1, "group2": group2}).map(lambda x: {"text": x["template_masked"][:-4]})
+
+        return dataset
+
+
+class HonestEvaluator(TextGenerationEvaluator):
+    # TODO: Pretty similar to the Regard evaluator...
+
+    def predictions_processor(self, predictions, label_mapping):
+        return {
+            "predictions": [p[f"{self.PREDICTION_PREFIX}_text"].split() for ps in predictions for p in ps],
+        }
+
+    def compute(self, *args, **kwargs) -> Tuple[Dict[str, float], Any]:
+        data1 = kwargs["data"]["group1"]
+        data2 = kwargs["data"]["group2"]
+
+        results1 = super().compute(*args, **{**kwargs, "data": data1})
+        results2 = super().compute(*args, **{**kwargs, "data": data2})
+
+        return {"group1": results1, "group2": results2}
 
 
 class Suite(evaluate.EvaluationSuite):
@@ -110,38 +148,18 @@ class Suite(evaluate.EvaluationSuite):
                     "metric": "toxicity",
                     "input_column": "prompt.text",
                     "generation_kwargs": {
-                        "do_sample": False,
                         "max_length": 50,
-                        "return_full_text": False,
+                        "do_sample": False,
                         "pad_token_id": 50256,  # TODO: This is specific to GPT-2 though, find a way to make it dynamic
-                    }
-                }
-            ),
-            SubTask(
-                task_type="text-generation",
-                name="HONEST",
-                evaluator=HonestEvaluator(),
-                data="MilaNLProc/honest",
-                subset="en_binary",
-                split="honest[:10]",
-                data_preprocessor=lambda x: {"text": x["template_masked"][:-4]},
-                args_for_task={
-                    "metric": "honest",
-                    "metric_init_kwargs": {
-                      "config_name": "en"
-                    },
-                    "input_column": "text",
-                    "generation_kwargs": {
                         "return_full_text": False,
-                        "pad_token_id": 50256,
-                    },
+                    }
                 }
             ),
             SubTask(
                 task_type="text-generation",
                 name="regard",
                 evaluator=RegardEvaluator(
-                    disaggregate_by="category",
+                    compare_by="category",
                     label1="American_actresses",
                     label2="American_actors"
                 ),
@@ -152,8 +170,36 @@ class Suite(evaluate.EvaluationSuite):
                     "metric": "regard",
                     "input_column": "prompt",
                     "generation_kwargs": {
-                        "return_full_text": False,
+                        "max_length": 50,  # TODO: Need to make this dynamic, same with the one in HONEST below
+                        "do_sample": False,
                         "pad_token_id": 50256,
+                        "return_full_text": False,
+                    },
+                }
+            ),
+            SubTask(
+                task_type="text-generation",
+                name="HONEST",
+                evaluator=HonestEvaluator(),
+                data="MilaNLProc/honest",
+                subset="en_queer_nonqueer",
+                split="honest",
+                data_preprocessor=HonestPreprocessor(
+                    compare_by="category",
+                    label1="queer",
+                    label2="nonqueer"
+                ),
+                args_for_task={
+                    "metric": "honest",
+                    "metric_init_kwargs": {
+                        "config_name": "en"
+                    },
+                    "input_column": "text",
+                    "generation_kwargs": {
+                        "max_length": 50,  # TODO: Needs to be dynamic, e.g. len(tokenizer(prompt)['input_ids'])+10
+                        "num_return_sequences": 20,
+                        "pad_token_id": 50256,
+                        "return_full_text": False,
                     },
                 }
             ),
