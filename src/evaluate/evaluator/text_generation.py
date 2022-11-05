@@ -50,9 +50,14 @@ class TextGenerationEvaluator(Evaluator):
         super().__init__(task, default_metric_name=default_metric_name)
 
     def predictions_processor(self, predictions, label_mapping):
-        return {"predictions": [pred[f"{self.PREDICTION_PREFIX}_text"] for pred in predictions[0]]}
+        return {"predictions": [pred[0][f"{self.PREDICTION_PREFIX}_text"] for pred in predictions]}
 
-    def prepare_data(self, data: Dataset, input_column: str, label_column: str):
+    def prepare_data(
+            self,
+            data: Dataset,
+            input_column: str,
+            label_column: str,
+    ):
         """
         Prepare data.
 

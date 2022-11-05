@@ -32,6 +32,7 @@ class SubTask:
     subset: Optional[str] = None
     split: Optional[str] = None
     data_preprocessor: Optional[Union[Callable, Preprocessor]] = None
+    metric_kwargs: Optional[dict] = None
     args_for_task: Optional[dict] = None
 
 
@@ -110,6 +111,7 @@ class EvaluationSuite:
             args_for_task["data"] = task.data
             args_for_task["subset"] = task.subset
             args_for_task["split"] = task.split
+            task_evaluator.METRIC_KWARGS = task.metric_kwargs or {}
             results = task_evaluator.compute(**args_for_task)
 
             task_id = task_name + "/" + task.subset if task.subset else task_name
