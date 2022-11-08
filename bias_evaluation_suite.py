@@ -43,7 +43,7 @@ Notes/Questions:
 class ToxicityPreprocessor(Preprocessor):
     def run(self, dataset: Dataset) -> Dataset:
         dataset = dataset.flatten()
-        dataset = dataset.shuffle()  # .select(range(100))  # TODO: Temporary, for replicating Colab results
+        dataset = dataset.shuffle().select(range(100))  # TODO: Temporary, for replicating Colab results
         return dataset
 
 
@@ -54,8 +54,8 @@ class BoldPreprocessor(Preprocessor):
         Sample 50 American_actresses + 50 American_actors, and only select the first prompt for each
         """
         shuffled_dataset = dataset.shuffle()
-        female_bold = shuffled_dataset.filter(lambda x: x["category"] == "American_actresses")  # .select(range(50))
-        male_bold = shuffled_dataset.filter(lambda x: x["category"] == "American_actors")  # .select(range(50))
+        female_bold = shuffled_dataset.filter(lambda x: x["category"] == "American_actresses").select(range(50))
+        male_bold = shuffled_dataset.filter(lambda x: x["category"] == "American_actors").select(range(50))
         dataset = concatenate_datasets([female_bold, male_bold])
 
         # Index needed for selecting the subgroups later
@@ -103,8 +103,8 @@ class HonestPreprocessor(Preprocessor):
 
     def run(self, dataset: Dataset) -> DatasetDict:
         shuffled_dataset = dataset.shuffle()
-        group1 = shuffled_dataset.filter(lambda x: x[self.compare_by].startswith(self.label1))  # .select(range(50))
-        group2 = shuffled_dataset.filter(lambda x: x[self.compare_by].startswith(self.label2))  # .select(range(50))
+        group1 = shuffled_dataset.filter(lambda x: x[self.compare_by].startswith(self.label1)).select(range(50))
+        group2 = shuffled_dataset.filter(lambda x: x[self.compare_by].startswith(self.label2)).select(range(50))
 
         # TODO: Might want to abstract out hard-coded values ("text", "template_masked")
         dataset = DatasetDict({"group1": group1, "group2": group2}).map(lambda x: {"text": x["template_masked"][:-4]})
@@ -150,7 +150,9 @@ class Suite(evaluate.EvaluationSuite):
                     "generation_kwargs": {
                         "max_length": 50,
                         "do_sample": False,
-                        "pad_token_id": 50256,  # TODO: This is specific to GPT-2 though, find a way to make it dynamic
+                        # TODO: This is specific to GPT-2 though, because it's not in the model confic...
+                        # Should find a way to make this dynamic, when it's necessary
+                        # "pad_token_id": 50256,
                         "return_full_text": False,
                     }
                 }
@@ -172,7 +174,7 @@ class Suite(evaluate.EvaluationSuite):
                     "generation_kwargs": {
                         "max_length": 50,  # TODO: Need to make this dynamic, same with the one in HONEST below
                         "do_sample": False,
-                        "pad_token_id": 50256,
+                        # "pad_token_id": 50256,
                         "return_full_text": False,
                     },
                 }
@@ -198,7 +200,7 @@ class Suite(evaluate.EvaluationSuite):
                     "generation_kwargs": {
                         "max_length": 50,  # TODO: Needs to be dynamic, e.g. len(tokenizer(prompt)['input_ids'])+10
                         "num_return_sequences": 20,
-                        "pad_token_id": 50256,
+                        # "pad_token_id": 50256,
                         "return_full_text": False,
                     },
                 }
